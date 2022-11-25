@@ -1,10 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:video_boxtv/core/adapters/local_storage/local_storage_adapter.dart';
 import 'package:video_boxtv/core/adapters/toast/toast_adapter.dart';
 import 'package:video_boxtv/core/controllers/connectivity_controller.dart';
-import 'package:video_boxtv/core/utils/custom_cache_manager.dart';
+import 'package:video_boxtv/core/utils/app_constants.dart';
 import 'package:video_boxtv/core/utils/app_exceptions.dart';
+import 'package:video_boxtv/data/models/local_file_model.dart';
+import 'package:video_boxtv/data/repositories/file/file_repository_interface.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/controllers/auth_controller.dart';
@@ -21,8 +26,17 @@ class HomeController extends GetxController {
   final AuthController _authController;
   final ConnectivityController _connectivityController;
   final IToastAdapter _toastAdapter;
+  final IFileRepository _fileRepository;
+  final ILocalStorageAdapter _localStorageAdapter;
 
-  HomeController(this._videoRepository, this._authController, this._connectivityController, this._toastAdapter);
+  HomeController(
+    this._videoRepository,
+    this._authController,
+    this._connectivityController,
+    this._toastAdapter,
+    this._fileRepository,
+    this._localStorageAdapter,
+  );
 
   // Controls status page
   final _statusPage = StatusPage.idle.obs;
@@ -35,25 +49,84 @@ class HomeController extends GetxController {
   set visibleControls(bool value) => _visibleControls.value = value;
 
   // Controls list of videos
-  late ResponseVideoModel _responseVideoModel;
+  ResponseVideoModel? _responseVideoModel;
   late AudioPlayerModel _audioPlayerModel;
+  DownloadFileModel downloadFileModel = DownloadFileModel(files: []);
   int indexVideo = -1;
   bool tapOnVideo = false;
+  bool _lastStatusConnection = false;
+  String get appName => _responseVideoModel?.appName ?? '';
+  late Worker _worker;
 
   // Controller players
   List<VideoPlayerController> listPlayers = [];
-  final player =
-      AudioPlayer(handleInterruptions: false, handleAudioSessionActivation: false, androidApplyAudioAttributes: false);
+  final player = AudioPlayer(
+    handleInterruptions: false,
+    handleAudioSessionActivation: false,
+    androidApplyAudioAttributes: false,
+  );
 
   @override
   void onInit() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
-    SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
     loadInitialInfos();
+
+    _lastStatusConnection = _connectivityController.isConnected;
+
+    _worker = ever<bool>(_connectivityController.rxConnected, (isConnected) {
+      if (_lastStatusConnection == isConnected) return;
+
+      if (isConnected) {
+        if (statusPage == StatusPage.failure) {
+          loadInitialInfos();
+          return;
+        }
+        player.stop().whenComplete(() => player.setUrl(_audioPlayerModel.appStreaming).then((_) => player.play()));
+      } else {
+        player.stop().whenComplete(() => player.setAsset(AppConstants.localAudio).then((_) => player.play()));
+      }
+
+      _lastStatusConnection = isConnected;
+    });
+
+    // Enter on full screen mode
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    // Change preferred Orientations to landscape only
+    SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+
     super.onInit();
   }
 
+  /// Validates if file is not expired and update local list videos
+  Future<void> _updateLocalListVideos() async {
+    try {
+      final String? localFiles = _localStorageAdapter.read(AppConstants.directoryFiles);
+      if (localFiles != null) {
+        downloadFileModel = DownloadFileModel.fromJson(localFiles);
+
+        final futures = <Future>[];
+
+        final list = List<LocalFileModel>.from(downloadFileModel.files);
+        for (final file in list) {
+          if (file.createdAt.isBefore(DateTime.now().subtract(const Duration(days: 3))) &&
+              _connectivityController.isConnected) {
+            futures.add(_fileRepository
+                .deleteFile(file.localPath)
+                .then((value) => Helpers.debug(value.isError ? value.error!.errorText : 'File is deleted')));
+
+            downloadFileModel.files.remove(file);
+          }
+        }
+
+        await Future.wait(futures);
+
+        return _localStorageAdapter.write(AppConstants.directoryFiles, downloadFileModel.toJson());
+      }
+    } catch (e, s) {
+      Helpers.error(e, s, identifier: '[HOME_CONTROLLER][_updateLocalListVideos]');
+    }
+  }
+
+  /// Load all videos and start audio
   Future<void> loadInitialInfos({bool forceRestart = false}) async {
     try {
       statusPage = StatusPage.loading;
@@ -62,6 +135,7 @@ class HomeController extends GetxController {
         Get.back();
         await player.stop();
         for (final player in listPlayers) {
+          player.pause();
           player.dispose();
         }
         listPlayers.clear();
@@ -69,6 +143,7 @@ class HomeController extends GetxController {
 
       final futures = await Future.wait([
         _videoRepository.getVideos(app: _authController.app.appName),
+        _updateLocalListVideos(),
         _videoRepository.getConfigs(app: _authController.app.appName, token: _authController.app.apiToken),
       ]);
 
@@ -91,15 +166,17 @@ class HomeController extends GetxController {
 
           await Future.wait([
             ...futures,
-            if (_audioPlayerModel.appStreaming.startsWith('http'))
-              if (_connectivityController.isConnected)
-                player.setUrl(_audioPlayerModel.appStreaming)
-              else if (_connectivityController.isConnected)
-                player.setAsset(_audioPlayerModel.appStreaming)
+            if (_connectivityController.isConnected)
+              player.setUrl(_audioPlayerModel.appStreaming)
+            else
+              player.setAsset(_audioPlayerModel.appStreaming)
           ]);
 
-          listPlayers.first.play();
+          _localStorageAdapter.write(AppConstants.directoryFiles, downloadFileModel.toJson());
+          await listPlayers.first.play();
           listPlayers.first.addListener(listenerVideoPlayer);
+          Helpers.debug('INDEX $indexVideo isInitialized: ${listPlayers[indexVideo].value.isInitialized}');
+          Helpers.debug('INDEX $indexVideo isPlaying: ${listPlayers[indexVideo].value.isPlaying}');
 
           statusPage = StatusPage.success;
 
@@ -107,21 +184,39 @@ class HomeController extends GetxController {
         }
       } else {
         statusPage = StatusPage.failure;
-        _toastAdapter.messageError(text: resultVideos.error!.errorText);
+        _toastAdapter.messageError(text: resultVideos.error?.errorText ?? 'Algo deu errado, verifique');
       }
     } catch (e, s) {
       statusPage = StatusPage.failure;
       Helpers.error(identifier: '[HOME_CONTROLLER][loadInitialInfos]', e, s);
-      if (e is Failure) _toastAdapter.messageError(text: e.errorText);
+      _toastAdapter.messageError(text: 'Algo deu errado, verifique: \n $e');
     }
   }
 
   Future<void> _loadVideo(String url) async {
-    final cache = CustomCacheManager.fromVideo();
+    late final VideoPlayerController playerController;
 
-    final file = await cache.getSingleFile(url);
+    final LocalFileModel? localFileModel = downloadFileModel.files.firstWhereOrNull((element) => element.url == url);
 
-    final playerController = VideoPlayerController.file(file);
+    if (localFileModel == null) {
+      if (!_connectivityController.isConnected) return;
+
+      final file = await _fileRepository.downloadFileFromUrlByIsolate(url: url, folder: 'videos');
+
+      if (file.isError) {
+        playerController = VideoPlayerController.network(url);
+      } else {
+        playerController = VideoPlayerController.file(file.data!);
+        downloadFileModel.files.add(LocalFileModel(createdAt: DateTime.now(), url: url, localPath: file.data!.path));
+      }
+    } else {
+      playerController = VideoPlayerController.file(File(localFileModel.localPath));
+      final int index = downloadFileModel.files.indexOf(localFileModel);
+      if (index >= 0) {
+        localFileModel.createdAt = DateTime.now();
+        downloadFileModel.files[index] = localFileModel;
+      }
+    }
 
     listPlayers.add(playerController);
 
@@ -145,15 +240,20 @@ class HomeController extends GetxController {
 
   Future<void> _updateVideoPlayer() async {
     try {
+      if (statusPage == StatusPage.loading) return;
       statusPage = StatusPage.loading;
-      if (indexVideo > 0) {
-        listPlayers[indexVideo - 1].removeListener(listenerVideoPlayer);
-        listPlayers[indexVideo - 1].pause();
-        listPlayers[indexVideo - 1].seekTo(const Duration());
-      }
 
-      listPlayers[indexVideo].play();
+      final int position = indexVideo > 0 ? indexVideo - 1 : listPlayers.length - 1;
+
+      listPlayers[position].removeListener(listenerVideoPlayer);
+      listPlayers[position].pause();
+      listPlayers[position].setVolume(0);
+      listPlayers[position].seekTo(const Duration());
+
+      await listPlayers[indexVideo].play();
       listPlayers[indexVideo].addListener(listenerVideoPlayer);
+      Helpers.debug('INDEX $indexVideo isInitialized: ${listPlayers[indexVideo].value.isInitialized}');
+      Helpers.debug('INDEX $indexVideo isPlaying: ${listPlayers[indexVideo].value.isPlaying}');
     } catch (e, s) {
       Helpers.error(identifier: '[HOME_CONTROLLER][_updateVideoPlayer]', e, s);
     }
@@ -164,8 +264,10 @@ class HomeController extends GetxController {
 
     if (isFinishedVideo) {
       indexVideo++;
-      if (indexVideo >= _responseVideoModel.videos.length) indexVideo = 0;
-      _updateVideoPlayer().then((value) => statusPage = StatusPage.success);
+      if (indexVideo >= (_responseVideoModel?.videos.length ?? 0)) indexVideo = 0;
+      _updateVideoPlayer()
+          .catchError((e, s) => Helpers.error(e, s, identifier: '[HOME_CONTROLLER][listenerVideoPlayer]'))
+          .then((value) => statusPage = StatusPage.success);
     }
   }
 
@@ -187,9 +289,11 @@ class HomeController extends GetxController {
   void onClose() {
     player.dispose();
     for (final player in listPlayers) {
+      player.pause();
       player.dispose();
     }
     listPlayers.clear();
+    _worker.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitDown, DeviceOrientation.portraitUp]);
     super.onClose();

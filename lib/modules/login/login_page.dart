@@ -44,6 +44,7 @@ class LoginPage extends GetView<LoginController> {
                       }
                       return null;
                     },
+                    onEditingComplete: controller.passwordFocus.requestFocus,
                     decoration: const InputDecoration(
                       label: Text('Usuário', style: TextStyle(fontWeight: FontWeight.w700)),
                     ),
@@ -51,6 +52,7 @@ class LoginPage extends GetView<LoginController> {
                   const SizedBox(height: 16),
                   ObxValue(
                     (visible) => TextFormField(
+                      focusNode: controller.passwordFocus,
                       obscureText: visible.value,
                       autovalidateMode: AutovalidateMode.onUserInteraction,
                       onChanged: (value) => controller.password = value,
@@ -72,6 +74,10 @@ class LoginPage extends GetView<LoginController> {
                           icon: Icon(visible.value ? Icons.visibility : Icons.visibility_off),
                         ),
                       ),
+                      onEditingComplete: () {
+                        controller.passwordFocus.unfocus();
+                        if (controller.isValid) controller.login();
+                      },
                     ),
                     true.obs,
                   ),

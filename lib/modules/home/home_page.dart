@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:video_boxtv/core/theme/text_theme.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/components/custom_responsive.dart';
@@ -25,6 +26,10 @@ class HomePage extends GetView<HomeController> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text(controller.appName, style: AppTextStyle.white(14)),
+                    ),
                     Icon(Icons.error_outline,
                         color: AppColors.primary, size: CustomResponsive.isDesktopOrUltra(context) ? 220 : 100),
                     Padding(
@@ -45,7 +50,7 @@ class HomePage extends GetView<HomeController> {
                         Padding(
                           padding: const EdgeInsets.all(8),
                           child: SizedBox(
-                            width: Get.width * .2,
+                            width: Get.width * .25,
                             height: 45,
                             child: OutlinedButton(
                               style: OutlinedButton.styleFrom(
@@ -62,7 +67,7 @@ class HomePage extends GetView<HomeController> {
                         Padding(
                           padding: const EdgeInsets.all(8),
                           child: SizedBox(
-                            width: Get.width * .2,
+                            width: Get.width * .25,
                             height: 45,
                             child: ElevatedButton(
                               onPressed: controller.loadInitialInfos,
@@ -132,7 +137,12 @@ class HomePage extends GetView<HomeController> {
                                         Get.bottomSheet(Material(
                                           color: Colors.white,
                                           child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
+                                              Padding(
+                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                                child: Text(controller.appName, style: AppTextStyle.primary(14)),
+                                              ),
                                               ListTile(
                                                 onTap: () => controller.loadInitialInfos(forceRestart: true),
                                                 leading: const Icon(Icons.refresh),
@@ -149,7 +159,7 @@ class HomePage extends GetView<HomeController> {
                                                   style: TextStyle(fontWeight: FontWeight.w600),
                                                 ),
                                               ),
-                                              const Divider(),
+                                              const Divider(height: 8),
                                               ListTile(
                                                 onTap: Get.back,
                                                 leading: const Icon(Icons.close),

@@ -1,9 +1,11 @@
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:video_boxtv/core/adapters/toast/toast_adapter.dart';
 
 import '../../core/controllers/auth_controller.dart';
 import '../../core/enums/status_page.dart';
+import '../../core/utils/app_exceptions.dart';
 import '../../data/repositories/auth/auth_repository_interface.dart';
 import '../../routes/app_pages.dart';
 
@@ -42,6 +44,7 @@ class LoginController extends GetxController {
 
   bool get isValid => username.trim().isNotEmpty && password.isNotEmpty && password.trim().length > 5;
   bool get isLoading => status == StatusPage.loading;
+  final FocusNode passwordFocus = FocusNode();
 
   // * Efetua login
   Future<void> login() async {
@@ -60,6 +63,13 @@ class LoginController extends GetxController {
     } catch (e) {
       status = StatusPage.failure;
       _toastAdapter.messageError(text: 'Erro ao fazer login, verifique.');
+      _toastAdapter.messageError(text: e is Failure ? e.errorText : 'Erro ao fazer login, verifique: \n $e');
     }
+  }
+
+  @override
+  void onClose() {
+    passwordFocus.dispose();
+    super.onClose();
   }
 }

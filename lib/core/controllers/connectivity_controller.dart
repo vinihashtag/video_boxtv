@@ -21,6 +21,7 @@ class ConnectivityController extends GetxController {
 
   // getters
   bool get isConnected => _isConnected.value;
+  RxBool get rxConnected => _isConnected;
   NetworkInfoType get typeConnection => _typeConnection.value;
 
   // * Make first request of status of connection and open stream

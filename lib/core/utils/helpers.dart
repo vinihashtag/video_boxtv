@@ -1,7 +1,9 @@
 import 'dart:developer';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
+import 'package:path_provider/path_provider.dart';
 
 class Helpers {
   Helpers._();
@@ -17,7 +19,6 @@ class Helpers {
       log(
         '$message',
         name: 'tvbox_videos',
-        // error: data,
         sequenceNumber: sequence ?? 0,
         time: DateTime.now(),
       );
@@ -30,8 +31,15 @@ class Helpers {
     // Create a conditional breakpoint to debbuger
     // debugger(when: true, message: 'marco: $state');
     if (kDebugMode) {
-      final log = Logger(identifier);
-      log.severe('ERROR', e, stackTrace);
+      log(
+        identifier,
+        error: e,
+        stackTrace: stackTrace,
+        name: 'tvbox_videos',
+        time: DateTime.now(),
+      );
+      // final log = Logger(identifier);
+      // log.severe('ERROR', e, stackTrace);
     }
   }
 
@@ -44,5 +52,24 @@ class Helpers {
       final log = Logger('tvbox_videos');
       log.info(message);
     }
+  }
+
+  /// Get directory by platform
+  static Future<Directory> getDirectory() async {
+    late final Directory baseDir;
+
+    try {
+      if (Platform.isAndroid) {
+        baseDir = (await getExternalStorageDirectory()) ?? await getApplicationDocumentsDirectory();
+      } else if (Platform.isIOS) {
+        baseDir = await getLibraryDirectory();
+      } else {
+        baseDir = await getTemporaryDirectory();
+      }
+    } catch (e) {
+      baseDir = await getTemporaryDirectory();
+    }
+
+    return baseDir;
   }
 }
