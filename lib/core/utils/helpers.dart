@@ -72,4 +72,17 @@ class Helpers {
 
     return baseDir;
   }
+
+  static String timeString(Duration duration) {
+    String result = '';
+
+    final hours = duration.inHours.remainder(24).toString().padLeft(2, '0');
+    final minut = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final secon = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+
+    result += '$hours:';
+    result += '$minut:';
+
+    return result += secon;
+  }
 }

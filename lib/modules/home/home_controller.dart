@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:combine/combine.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:just_audio/just_audio.dart';
@@ -47,6 +48,15 @@ class HomeController extends GetxController {
   final _visibleControls = false.obs;
   bool get visibleControls => _visibleControls.value;
   set visibleControls(bool value) => _visibleControls.value = value;
+
+  // Controls progress video
+  final _durationVideo = const Duration().obs;
+  final _positionVideo = const Duration().obs;
+  final _progressVideo = 0.0.obs;
+  String get durationVideo => Helpers.timeString(_durationVideo.value);
+  String get positionVideo => Helpers.timeString(_positionVideo.value);
+  double get progressVideo => _progressVideo.value;
+  set progressVideo(double value) => _progressVideo.value = value;
 
   // Controls list of videos
   ResponseVideoModel? _responseVideoModel;
@@ -107,7 +117,7 @@ class HomeController extends GetxController {
 
         final list = List<LocalFileModel>.from(downloadFileModel.files);
         for (final file in list) {
-          if (file.createdAt.isBefore(DateTime.now().subtract(const Duration(days: 3))) &&
+          if (file.createdAt.isBefore(DateTime.now().subtract(const Duration(days: 7))) &&
               _connectivityController.isConnected) {
             futures.add(_fileRepository
                 .deleteFile(file.localPath)
@@ -154,14 +164,16 @@ class HomeController extends GetxController {
 
       if (resultVideos.isSuccess) {
         _responseVideoModel = resultVideos.data!;
+        // _responseVideoModel!.videos.removeWhere((element) => resultVideos.data!.videos.indexOf(element) > 3);
         if (resultVideos.data!.videos.isEmpty) {
-          statusPage = StatusPage.empty;
+          statusPage = StatusPage.failure;
+          _toastAdapter.messageError(text: 'Você não possui videos no momento tente mais tarde');
         } else {
           indexVideo = 0;
 
           final futures = <Future>[];
           for (final VideoModel video in resultVideos.data!.videos) {
-            futures.add(_loadVideo(video.url));
+            futures.add(_loadVideo(video.url, video.url == resultVideos.data!.videos.last.url));
           }
 
           await Future.wait([
@@ -169,16 +181,18 @@ class HomeController extends GetxController {
             if (_connectivityController.isConnected)
               player.setUrl(_audioPlayerModel.appStreaming)
             else
-              player.setAsset(_audioPlayerModel.appStreaming)
+              player.setAsset(AppConstants.localAudio)
           ]);
 
-          _localStorageAdapter.write(AppConstants.directoryFiles, downloadFileModel.toJson());
-          await listPlayers.first.play();
-          listPlayers.first.addListener(listenerVideoPlayer);
-          Helpers.debug('INDEX $indexVideo isInitialized: ${listPlayers[indexVideo].value.isInitialized}');
-          Helpers.debug('INDEX $indexVideo isPlaying: ${listPlayers[indexVideo].value.isPlaying}');
+          await playFirstVideo();
 
-          statusPage = StatusPage.success;
+          if (listPlayers.isEmpty) {
+            statusPage = StatusPage.failure;
+            _toastAdapter.messageError(text: 'Você não possui videos no momento tente mais tarde');
+            return;
+          } else {
+            statusPage = StatusPage.success;
+          }
 
           if (!player.playing) await player.play();
         }
@@ -193,7 +207,23 @@ class HomeController extends GetxController {
     }
   }
 
-  Future<void> _loadVideo(String url) async {
+  Future<void> playFirstVideo() async {
+    try {
+      if (listPlayers.isNotEmpty) {
+        await listPlayers.first.play();
+        listPlayers.first.addListener(listenerVideoPlayer);
+        Helpers.debug('INDEX $indexVideo isInitialized: ${listPlayers[indexVideo].value.isInitialized}');
+        Helpers.debug('INDEX $indexVideo isPlaying: ${listPlayers[indexVideo].value.isPlaying}');
+        Helpers.debug('INDEX $indexVideo datasource is by: ${listPlayers[indexVideo].dataSourceType.name}');
+      }
+    } catch (e) {
+      listPlayers.first.dispose();
+      listPlayers.removeAt(0);
+      playFirstVideo();
+    }
+  }
+
+  Future<void> _loadVideo(String url, bool lastVideo) async {
     late final VideoPlayerController playerController;
 
     final LocalFileModel? localFileModel = downloadFileModel.files.firstWhereOrNull((element) => element.url == url);
@@ -201,14 +231,31 @@ class HomeController extends GetxController {
     if (localFileModel == null) {
       if (!_connectivityController.isConnected) return;
 
-      final file = await _fileRepository.downloadFileFromUrlByIsolate(url: url, folder: 'videos');
+      playerController = VideoPlayerController.network(url);
 
-      if (file.isError) {
-        playerController = VideoPlayerController.network(url);
-      } else {
-        playerController = VideoPlayerController.file(file.data!);
+      _fileRepository.downloadFileFromUrlByIsolate(url: url, folder: AppConstants.folder).then((file) async {
+        final player = VideoPlayerController.file(file.data!);
+        await player.initialize();
+        if (playerController.value.isPlaying) {
+          player.dispose();
+        } else {
+          final index = listPlayers.indexOf(playerController);
+          if (index > -1) {
+            playerController.removeListener(listenerVideoPlayer);
+            playerController.pause();
+            playerController.dispose();
+            player.setVolume(0);
+            listPlayers[index] = player;
+          }
+        }
         downloadFileModel.files.add(LocalFileModel(createdAt: DateTime.now(), url: url, localPath: file.data!.path));
-      }
+        if (lastVideo) {
+          _localStorageAdapter.write(AppConstants.directoryFiles, downloadFileModel.toJson());
+          CombineWorker().close(waitForRemainingTasks: true);
+        }
+
+        Helpers.debug('Video url: $url downloaded!!!');
+      });
     } else {
       playerController = VideoPlayerController.file(File(localFileModel.localPath));
       final int index = downloadFileModel.files.indexOf(localFileModel);
@@ -223,6 +270,13 @@ class HomeController extends GetxController {
     await playerController.initialize();
 
     playerController.setVolume(0);
+
+    if (lastVideo) {
+      final hasUrlByNetwork =
+          listPlayers.firstWhereOrNull((element) => element.dataSourceType == DataSourceType.network);
+      if (hasUrlByNetwork == null) CombineWorker().close(waitForRemainingTasks: true);
+      _localStorageAdapter.write(AppConstants.directoryFiles, downloadFileModel.toJson());
+    }
   }
 
   void onTapVideo() {
@@ -244,22 +298,44 @@ class HomeController extends GetxController {
       statusPage = StatusPage.loading;
 
       final int position = indexVideo > 0 ? indexVideo - 1 : listPlayers.length - 1;
+      final previousPlayer = listPlayers[position];
+      previousPlayer.removeListener(listenerVideoPlayer);
+      previousPlayer.pause();
+      if (previousPlayer.dataSourceType == DataSourceType.network) {
+        final file = downloadFileModel.files.firstWhereOrNull((element) => element.url == previousPlayer.dataSource);
+        if (file != null) {
+          previousPlayer.dispose();
+          final player = VideoPlayerController.file(File(file.localPath));
+          player.initialize().then((value) {
+            player.setVolume(0);
+            listPlayers[position] = player;
+          });
+        }
+      } else {
+        previousPlayer.setVolume(0);
+        previousPlayer.seekTo(const Duration());
+      }
 
-      listPlayers[position].removeListener(listenerVideoPlayer);
-      listPlayers[position].pause();
-      listPlayers[position].setVolume(0);
-      listPlayers[position].seekTo(const Duration());
-
-      await listPlayers[indexVideo].play();
-      listPlayers[indexVideo].addListener(listenerVideoPlayer);
-      Helpers.debug('INDEX $indexVideo isInitialized: ${listPlayers[indexVideo].value.isInitialized}');
-      Helpers.debug('INDEX $indexVideo isPlaying: ${listPlayers[indexVideo].value.isPlaying}');
+      final nextPlayer = listPlayers[indexVideo];
+      await nextPlayer.play();
+      nextPlayer.addListener(listenerVideoPlayer);
+      Helpers.debug('INDEX $indexVideo isInitialized: ${nextPlayer.value.isInitialized}');
+      Helpers.debug('INDEX $indexVideo isPlaying: ${nextPlayer.value.isPlaying}');
+      Helpers.debug('INDEX $indexVideo datasource is by: ${nextPlayer.dataSourceType.name}');
     } catch (e, s) {
       Helpers.error(identifier: '[HOME_CONTROLLER][_updateVideoPlayer]', e, s);
+      indexVideo++;
+      if (indexVideo >= (_responseVideoModel?.videos.length ?? 0)) indexVideo = 0;
+      _updateVideoPlayer()
+          .catchError((e, s) => Helpers.error(e, s, identifier: '[HOME_CONTROLLER][listenerVideoPlayer]'))
+          .then((value) => statusPage = StatusPage.success);
     }
   }
 
   void listenerVideoPlayer() {
+    _durationVideo.value = listPlayers[indexVideo].value.duration;
+    _positionVideo.value = listPlayers[indexVideo].value.position;
+    progressVideo = getProgress(listPlayers[indexVideo].value.duration, listPlayers[indexVideo].value.position);
     final bool isFinishedVideo = listPlayers[indexVideo].value.duration == listPlayers[indexVideo].value.position;
 
     if (isFinishedVideo) {
@@ -279,9 +355,18 @@ class HomeController extends GetxController {
     if (!tapOnVideo) visibleControls = false;
   }
 
+  double getProgress(Duration duration, Duration position) {
+    final Duration videoPosition = position;
+    final Duration videoDuration = duration;
+    final double total = videoPosition.inMilliseconds.ceilToDouble() / videoDuration.inMilliseconds.ceilToDouble();
+    final double progress = total.isNaN ? 0.0 : total;
+    return progress;
+  }
+
   void logout() {
     Get.back();
     _authController.logout();
+    _fileRepository.clearDirectory(AppConstants.folder);
     Get.offAllNamed(Routes.login);
   }
 
@@ -296,6 +381,7 @@ class HomeController extends GetxController {
     _worker.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitDown, DeviceOrientation.portraitUp]);
+
     super.onClose();
   }
 }

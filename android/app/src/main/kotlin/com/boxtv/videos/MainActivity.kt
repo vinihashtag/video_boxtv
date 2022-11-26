@@ -1,4 +1,4 @@
-package com.example.video_boxtv
+package com.boxtv.videos
 
 import io.flutter.embedding.android.FlutterActivity
 

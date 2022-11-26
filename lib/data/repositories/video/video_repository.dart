@@ -27,7 +27,7 @@ class VideoRepository implements IVideoRepository {
 
         if (response.isError) return ResponseModel(error: response.error);
 
-        final model = AudioPlayerModel.fromMap(response.data);
+        final model = AudioPlayerModel.fromMap(response.data is String ? {} : response.data);
 
         _localStorageAdapter.write(AppConstants.configsVideoKey, model.toJson());
 
@@ -56,7 +56,7 @@ class VideoRepository implements IVideoRepository {
 
         if (response.isError) return ResponseModel(error: response.error);
 
-        final model = ResponseVideoModel.fromMap(response.data);
+        final model = ResponseVideoModel.fromMap(response.data is String ? {} : response.data);
 
         await _localStorageAdapter.write(AppConstants.listVideosKey, model.toJson());
 

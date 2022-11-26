@@ -89,9 +89,26 @@ class HomePage extends GetView<HomeController> {
           return AnimatedSwitcher(
             duration: const Duration(milliseconds: 500),
             child: controller.statusPage == StatusPage.loading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Color.fromRGBO(255, 0, 0, 0.7))))
+                ? Center(
+                    child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Color.fromRGBO(255, 0, 0, 0.7)),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Carregando, aguarde...',
+                          style: TextStyle(
+                              fontSize: CustomResponsive.isDesktopOrUltra(context) ? 30 : 18,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ))
                 : GestureDetector(
                     onTap: controller.visibleControls ? controller.onTapVideo : controller.showControls,
                     child: Stack(
@@ -123,6 +140,43 @@ class HomePage extends GetView<HomeController> {
                                   },
                                 ),
                         ),
+                        Positioned(
+                          bottom: 16,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 300),
+                            opacity: controller.visibleControls ? 1 : 0,
+                            child: Obx(
+                              () => Stack(
+                                clipBehavior: Clip.none,
+                                fit: StackFit.passthrough,
+                                children: [
+                                  Container(
+                                    width: Get.width * .95,
+                                    height: 10,
+                                    margin: const EdgeInsets.all(16),
+                                    decoration:
+                                        BoxDecoration(color: Colors.white54, borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 500),
+                                    height: 10,
+                                    margin: const EdgeInsets.all(16),
+                                    width: ((Get.width * .95) * controller.progressVideo),
+                                    decoration:
+                                        BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  Positioned(
+                                      top: -5,
+                                      left: 16,
+                                      child: Text(
+                                        '${controller.positionVideo} / ${controller.durationVideo}',
+                                        style: AppTextStyle.white(12),
+                                      ))
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 300),
                           child: !controller.visibleControls
@@ -137,6 +191,7 @@ class HomePage extends GetView<HomeController> {
                                         Get.bottomSheet(Material(
                                           color: Colors.white,
                                           child: Column(
+                                            mainAxisSize: MainAxisSize.min,
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
                                               Padding(

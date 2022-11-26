@@ -16,7 +16,16 @@ Future<void> main() async {
 
   MainBindings().dependencies();
 
-  await Future.wait([GetStorage.init(), Get.find<AuthController>().getCurrentUser()]);
+  await Future.wait([
+    GetStorage.init(),
+    Get.find<AuthController>().getCurrentUser(),
+    // if (GetPlatform.isAndroid) PlatformAssetBundle().load('assets/ca/lets-encrypt-r3.pem'),
+  ]);
+
+  // if (GetPlatform.isAndroid) {
+  //   final ByteData data = futures.last as ByteData;
+  //   SecurityContext.defaultContext.setTrustedCertificatesBytes(data.buffer.asUint8List());
+  // }
 
   runApp(const MyApp());
 }
@@ -27,6 +36,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
+      title: 'BOXTV VIDEO',
       debugShowCheckedModeBanner: false,
       enableLog: kDebugMode,
       defaultTransition: Transition.native,

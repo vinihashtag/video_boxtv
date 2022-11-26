@@ -1,11 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.video_boxtv">
+    package="com.boxtv.videos">
      <uses-permission android:name="android.permission.INTERNET"/>
    <application
-        android:label="video_boxtv"
+        android:label="BOXTV VIDEO"
         android:name="${applicationName}"
         android:usesCleartextTraffic="true"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/launcher_icon">
         <activity
             android:name=".MainActivity"
             android:exported="true"

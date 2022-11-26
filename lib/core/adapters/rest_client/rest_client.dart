@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:dio/adapter.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -19,6 +21,11 @@ class RestClientAdapter implements IRestClientAdapter {
           baseUrl: '' //_requestByIsolate ? '' : Environment.getString('apiBaseUrl'),
           ),
     );
+
+    (_dio.httpClientAdapter as DefaultHttpClientAdapter).onHttpClientCreate = (HttpClient client) {
+      client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+      return client;
+    };
   }
 
   late Dio _dio;

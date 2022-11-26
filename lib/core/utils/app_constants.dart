@@ -6,4 +6,5 @@ class AppConstants {
   static const String listVideosKey = '/LIST_VIDEOS/';
   static const String directoryFiles = '/FILES_VIDEOS/';
   static const String localAudio = 'assets/audio.mp3';
+  static const String folder = 'videos';
 }
